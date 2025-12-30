@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>釣魚模擬器 V15 - 小按鈕版（保留原始功能）</title>
+  <style>
+    /* 基本頁面 */
+    :root {
+      --panel-bg: rgba(255,255,255,0.95);
+      --accent: #1976D2;
+    }
+    *{box-sizing:border-box}
+    body { margin:0; font-family:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial; background:linear-gradient(to bottom,#87CEEB 60%,#1E90FF 100%); color:#111; -webkit-tap-highlight-color: transparent; }
+    #game { display:flex; height:100vh; align-items:stretch; position:relative; }
+
+    /* 左側商店列（保留） */
+    #shop-panel { width:60px; background:#ffffffcc; display:flex; flex-direction:column; align-items:center; padding-top:10px; box-shadow:2px 0 5px rgba(0,0,0,0.15); position:relative; z-index:20;}
+    #shop-panel button { font-size:24px; background:none; border:none; cursor:pointer; padding:6px; }
+    #shop-panel .lock-badge { position:absolute; top:4px; right:6px; font-size:12px; color:#c62828; display:none; }
+
+    /* 玩家資訊 */
+    #player-info-container { position:absolute; top:12px; left:80px; color:#fff; text-shadow:1px 1px 3px rgba(0,0,0,0.6); font-weight:700; z-index:30; }
+    #player-name { font-size:15px; margin-bottom:6px; }
+    #level-bar-container { width:180px; height:12px; background:rgba(255,255,255,0.28); border-radius:10px; overflow:hidden; box-shadow:inset 0 0 4px rgba(0,0,0,0.2); }
+    #level-bar { height:100%; width:0%; background:linear-gradient(90deg,#ffd700,#ffa500); transition:width .4s ease; }
+
+    /* 主畫面 */
+    #main-panel { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; padding-bottom:120px; }
+    #scoreboard { position:absolute; top:12px; right:12px; background:var(--panel-bg); padding:10px 14px; border-radius:12px; font-weight:800; display:flex; flex-direction:column; align-items:flex-end; gap:6px; box-shadow:0 6px 18px rgba(0,0,0,0.12); z-index:30;}
+    #rod-info { position:absolute; top:72px; left:80px; background:rgba(255,255,255,0.12); padding:6px 12px; border-radius:10px; font-size:14px; z-index:30; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,0.45); }
+
+    /* SVG 釣竿模型（上方） */
+    #rod-svg-wrap { position:absolute; left:12%; top:6%; width:50vw; height:36vh; pointer-events:none; z-index:6; opacity:0.98; }
+    #rod-svg { width:100%; height:100%; display:block; }
+    .rod-handle { fill:#5d4037; }
+    .rod-body { stroke:#2e7d32; stroke-width:6; fill:none; stroke-linecap:round; stroke-linejoin:round; }
+    .rod-reel { fill:#9e9e9e; stroke:#616161; stroke-width:2; }
+
+    /* 釣魚文字/圖示 */
+    #result { font-size:20px; margin-top:10px; text-shadow:1px 1px 2px #000; color:#fff; text-align:center; z-index:30; }
+    /* fish-name-badge: name area colored by rank (border only) */
+    .fish-name-badge{
+      display:inline-block;
+      padding:6px 10px;
+      border-radius:10px;
+      color: #fff;
+      font-weight:900;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+      min-width:160px;
+      text-align:center;
+      background: rgba(255,255,255,0.06);
+      border: 3px solid transparent; /* border color will indicate rank */
+    }
+    #fish-level { font-size:18px; margin-top:10px; font-weight:700; color:#fff; text-shadow:1px 1px 2px #000; z-index:30; }
+    #fish-icon { font-size:56px; margin-top:6px; z-index:30; transition: transform .45s cubic-bezier(.2,.8,.2,1); }
+
+    /* AFK 結果視窗（置中彈窗） */
+    #afk-results { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); display:none; width:88vw; max-width:760px; max-height:72vh; background:var(--panel-bg); border-radius:14px; padding:14px; box-shadow:0 12px 40px rgba(0,0,0,0.25); z-index:10050; overflow:auto; }
+    #afk-fish-container { display:flex; flex-wrap:wrap; gap:12px; justify-content:center; }
+    .afk-fish { width:70px; height:70px; border-radius:12px; border:3px solid; display:flex; align-items:center; justify-content:center; font-size:36px; position:relative; }
+    .afk-count { position:absolute; bottom:4px; right:6px; font-size:16px; font-weight:800; background:rgba(0,0,0,0.6); color:white; padding:2px 6px; border-radius:8px; }
+    #afk-coin-display { width:100%; text-align:center; margin-top:10px; font-weight:800; font-size:18px; padding:8px; border-radius:10px; border:2px solid #2196F3; display:flex; justify-content:center; align-items:center; gap:8px; }
+
+    /* 小按鈕列（上移版） */
+    .small-button-row {
+      position:fixed;
+      left:50%;
+      transform:translateX(-50%);
+      bottom:100px; /* 把按鈕往上移，避免與底部長欄重疊 */
+      display:flex;
+      gap:10px;
+      z-index:9999;
+      align-items:center;
+    }
+    .btn-small {
+      min-width:110px;
+      padding:10px 12px;
+      border-radius:12px;
+      border:none;
+      font-weight:800;
+      font-size:15px;
+      cursor:pointer;
+      box-shadow:0 8px 26px rgba(0,0,0,0.12);
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:8px;
+      background:var(--accent);
+      color:white;
+    }
+    .btn-small.secondary { background:#4CAF50; }
+    .btn-small.tertiary { background:#FF9800; color:#111; }
+
+    .btn-small:disabled { opacity:0.5; cursor:not-allowed; box-shadow:none; }
+
+    /* 底部窄長欄（左側為釣竿區，右側為快捷資訊） */
+    .bottom-bar {
+      position:fixed;
+      left:50%;
+      transform:translateX(-50%);
+      bottom:12px;
+      width:94%;
+      max-width:920px;
+      height:72px;
+      background:var(--panel-bg);
+      border-radius:12px;
+      display:flex;
+      align-items:center;
+      box-shadow:0 8px 26px rgba(0,0,0,0.12);
+      padding:8px 12px;
+      gap:12px;
+      z-index:9990;
+    }
+    .bottom-rod {
+      width:220px;
+      height:100%;
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding:8px;
+      border-radius:10px;
+      border-right:1px solid rgba(0,0,0,0.06);
+    }
+    .rod-preview-small {
+      width:64px; height:44px; border-radius:8px; background:linear-gradient(180deg,#fff,#f5f5f5); display:flex; align-items:center; justify-content:center; font-size:22px;
+      box-shadow:inset 0 -6px 12px rgba(0,0,0,0.04);
+    }
+    .rod-name-small { font-weight:800; font-size:14px; color:#222; }
+
+    .bottom-right {
+      flex:1; display:flex; align-items:center; justify-content:flex-end; gap:10px;
+    }
+    .bottom-info { font-weight:700; color:#333; margin-right:8px; display:flex; align-items:center; gap:6px; }
+
+    /* 商店浮層 */
+    #shop { position:fixed; left:70px; top:80px; width:360px; background:var(--panel-bg); padding:12px; border-radius:12px; display:none; box-shadow:0 12px 40px rgba(0,0,0,0.2); z-index:20000; max-height:70vh; overflow:auto; }
+
+    .shop-item { padding:8px; background:#eaf6ff; border-radius:8px; margin:8px 0; display:flex; align-items:center; justify-content:space-between; gap:8px; font-weight:800; }
+    .shop-btn.buy { background:#4CAF50; color:#fff; border:none; padding:6px 10px; border-radius:8px; font-weight:900; cursor:pointer; }
+    .shop-btn.owned { background:#9e9e9e; color:#fff; padding:6px 10px; border-radius:8px; border:none; cursor:default; }
+
+    /* modal 釣竿介面（置中） */
+    #rod-modal { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%) scale(.98); background:var(--panel-bg); border-radius:12px; padding:12px; box-shadow:0 20px 60px rgba(0,0,0,0.25); z-index:30000; display:none; width:86vw; max-width:720px; max-height:78vh; overflow:auto; }
+    #rod-modal.show { display:block; transform:translate(-50%,-50%) scale(1); }
+    .rod-row { display:flex; align-items:center; justify-content:space-between; padding:8px; background:#fff; border-radius:10px; margin-bottom:8px; gap:8px; }
+    .modal-equip-btn { border:none; padding:8px 12px; border-radius:10px; font-weight:800; cursor:pointer; }
+    .modal-equip-btn.equip { background:#1976D2; color:white; }
+    .modal-equip-btn.disabled { background:#9e9e9e; color:white; cursor:not-allowed; }
+
+    /* 新增：rod-modal preview 區 */
+    #rod-modal-preview {
+      width:100%;
+      display:flex;
+      gap:12px;
+      align-items:center;
+      justify-content:flex-start;
+      padding:8px 0 12px 0;
+      border-bottom:1px solid rgba(0,0,0,0.06);
+      margin-bottom:12px;
+    }
+    #rod-preview-big {
+      width:240px;
+      height:120px;
+      border-radius:10px;
+      background:linear-gradient(180deg,#fff,#f8fbff);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      box-shadow:0 8px 20px rgba(0,0,0,0.08);
+      flex-shrink:0;
+    }
+    #rod-preview-info { display:flex; flex-direction:column; gap:6px; }
+    #rod-list { display:flex; flex-direction:column; gap:8px; max-height:44vh; overflow:auto; padding-right:6px; }
+
+    /* 小提示與動畫 */
+    #level-up-notice { position:fixed; left:50%; top:18%; transform:translateX(-50%); display:none; background:linear-gradient(90deg,#ffd54f,#ffb300); padding:10px 16px; border-radius:12px; box-shadow:0 8px 26px rgba(0,0,0,0.18); font-weight:900; z-index:40000; }
+    #unlock-notice { position:fixed; left:50%; top:28%; transform:translate(-50%,-50%); display:none; background:linear-gradient(90deg,#64b5f6,#42a5f5); color:white; padding:12px 16px; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,0.24); z-index:40050; font-weight:900; }
+
+    /* 釣魚/浮標動畫輔助（JS 會改變 transform / d） */
+    .fish-pop {
+      animation: popIn .45s cubic-bezier(.2,.9,.2,1);
+    }
+    @keyframes popIn {
+      0%{ transform:scale(.2) translateY(6px); opacity:0; }
+      60%{ transform:scale(1.08) translateY(-6px); opacity:1; }
+      100%{ transform:scale(1) translateY(0); opacity:1; }
+    }
+
+    /* rank color classes for name border */
+    .rank-D { border-color: #9E9E9E; } /* grey */
+    .rank-C { border-color: #4CAF50; } /* green */
+    .rank-B { border-color: #2196F3; } /* blue */
+    .rank-A { border-color: #9C27B0; } /* purple */
+    .rank-S { border-color: #FFD700; color:#111; } /* gold */
+
+    /* responsive */
+    @media (max-width:520px){
+      #rod-svg-wrap { left:6%; width:80vw; height:30vh; top:4%; }
+      .small-button-row { bottom:120px; gap:6px; }
+      .btn-small { min-width:88px; padding:8px 10px; font-size:13px; }
+      .bottom-bar { height:84px; padding:10px; }
+      #rod-preview-big { width:180px; height:96px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="game">
+    <!-- 左側商店按鈕 -->
+    <div id="shop-panel">
+      <button id="shop-btn" aria-label="商店">🛒</button>
+      <span class="lock-badge" id="shop-lock" style="display:none">🔒</span>
+    </div>
+
+    <!-- 玩家資訊 -->
+    <div id="player-info-container">
+      <div id="player-name">玩家：<span id="name-display">未知</span></div>
+      <div id="level-bar-container"><div id="level-bar"></div></div>
+    </div>
+
+    <!-- 主面板 -->
+    <div id="main-panel">
+      <div id="scoreboard">🪙 <span id="coin-display">0</span><br/>分數：<span id="score-display">0</span></div>
+      <div id="rod-info">當前釣竿：普通釣竿</div>
+
+      <!-- 保留線與浮標節點（原始結構，可能隱藏） -->
+      <div id="rod-line" style="display:none"></div>
+      <div id="bobber" style="display:none"></div>
+
+      <!-- SVG 釣竿建模（上方展示） -->
+      <div id="rod-svg-wrap">
+        <svg id="rod-svg" viewBox="0 0 600 400" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+          <rect id="rod-handle" class="rod-handle" x="70" y="250" width="80" height="16" rx="8"></rect>
+          <circle id="rod-reel" class="rod-reel" cx="120" cy="258" r="18"></circle>
+          <path id="rod-body" class="rod-body" d="M150,258 C260,210 380,180 520,150"></path>
+          <path id="rod-line-svg" class="rod-body" d="M520,150 Q540,200 560,240" stroke="#2e7d32" fill="none"></path>
+          <circle id="bobber-svg" class="rod-reel" cx="560" cy="240" r="10"></circle>
+        </svg>
+      </div>
+
+      <!-- 中央顯示釣魚結果 -->
+      <div id="fish-level"></div>
+      <div id="result">點擊「釣魚！」開始</div>
+      <div id="fish-icon" aria-hidden="true"></div>
+
+      <!-- AFK 結果彈窗 -->
+      <div id="afk-results" role="dialog" aria-hidden="true">
+        <div id="afk-fish-container"></div>
+        <div id="afk-coin-display">金幣：0</div>
+        <div style="display:flex; gap:10px; margin-top:12px; justify-content:center;">
+          <button id="quick-patrol-claim-btn" class="btn-small secondary" style="min-width:150px;">領取快速巡邏獎勵</button>
+          <button id="afk-claim-btn" class="btn-small tertiary" style="min-width:150px;">領取掛機獎勵</button>
+        </div>
+        <div style="display:flex; gap:8px; justify-content:center; margin-top:12px;">
+          <button id="afk-close-btn" style="background:#f44336;color:#fff;border:none;padding:8px 12px;border-radius:10px;font-weight:800;cursor:pointer;">關閉</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 小按鈕列：上移到底欄之上（小框） -->
+  <div class="small-button-row" role="toolbar" aria-label="遊戲快捷鍵">
+    <button id="rod-btn" class="btn-small" title="釣竿">釣竿</button>
+    <button id="fish-btn" class="btn-small" title="釣魚">🎣 釣魚！</button>
+    <button id="afk-btn" class="btn-small secondary" title="掛機收益">💤 掛機收益</button>
+  </div>
+
+  <!-- 底部窄長欄：左側為釣竿區塊 -->
+  <div class="bottom-bar" role="navigation" aria-label="底部狀態列">
+    <div class="bottom-rod" aria-hidden="false">
+      <div class="rod-preview-small" id="rod-preview-small">🎣</div>
+      <div style="display:flex;flex-direction:column;justify-content:center;">
+        <div class="rod-name-small" id="rod-name-small">普通釣竿</div>
+        <div style="font-size:12px;color:#666;">點選可切換</div>
+      </div>
+    </div>
+
+    <div class="bottom-right">
+      <div class="bottom-info">🪙 <span id="coin-display-bottom">0</span></div>
+      <div class="bottom-info">分數 <span id="score-display-bottom">0</span></div>
+      <div class="bottom-info">粉末 <span id="powder-count">0</span> ✨</div>
+      <button id="open-shop-bottom" class="btn-small" style="min-width:110px;background:#fff;color:var(--accent);border:2px solid var(--accent);">商店</button>
+    </div>
+  </div>
+
+  <!-- 商店浮層 -->
+  <div id="shop" aria-hidden="true"></div>
+
+  <!-- 釣竿 modal（置中） -->
+  <div id="rod-modal" role="dialog" aria-hidden="true">
+    <!-- preview top -->
+    <div id="rod-modal-preview" style="display:none;">
+      <div id="rod-preview-big" aria-hidden="true">
+        <!-- 大預覽 SVG（由 JS 生成內容或複製小 SVG） -->
+        <svg id="rod-preview-svg" viewBox="0 0 600 200" style="width:220px;height:100%;" preserveAspectRatio="xMidYMid meet"></svg>
+      </div>
+      <div id="rod-preview-info">
+        <div style="font-weight:900;font-size:18px;" id="rod-preview-name">釣竿預覽</div>
+        <div id="rod-preview-desc" style="color:#333">點擊下方任一釣竿可在此預覽。滑動清單以查看更多釣竿。</div>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <div style="font-weight:900;font-size:18px;">切換釣竿</div>
+      <div>
+        <button id="rod-modal-close" style="border:none;background:none;font-size:20px;cursor:pointer;">✕</button>
+      </div>
+    </div>
+    <div id="rod-list"></div>
+  </div>
+
+  <audio id="sound-fish" src="https://cdn.pixabay.com/audio/2022/03/15/audio_7e3dc19b7e.mp3"></audio>
+  <div id="level-up-notice"></div>
+  <div id="unlock-notice"></div>
+
+<script>
+/* ========= 邏輯與資料 - 保留原有的行為與 localStorage 結構 ========= */
+
+/* 載入並保留你的原始設定與資料鍵：score, coins, rod, name, afkCount, lastAFKTime, ownedRods, fishCaught 等 */
+let score = +localStorage.getItem("score") || 0;
+let coins = +localStorage.getItem("coins") || 0;
+let equippedRod = localStorage.getItem("rod") || "普通釣竿";
+let playerName = localStorage.getItem("name") || prompt("請輸入玩家名稱：") || "玩家";
+localStorage.setItem("name", playerName);
+
+document.getElementById("name-display").textContent = playerName;
+
+/* 經驗與等級（簡化） */
+let experience = +localStorage.getItem("experience") || 0;
+
+/* 掛機計數 */
+let afkCount = +localStorage.getItem("afkCount") || 0;
+let lastAFKTime = +localStorage.getItem("lastAFKTime") || Date.now();
+
+/* 快速巡邏每日次數 */
+let lastQuickPatrolClaimDate = localStorage.getItem("lastQuickPatrolClaimDate") || "";
+let quickPatrolClaimsToday = +localStorage.getItem("quickPatrolClaimsToday") || 0;
+
+/* 擁有釣竿 */
+let ownedRods = JSON.parse(localStorage.getItem("ownedRods") || "null");
+if(!ownedRods){ ownedRods = ["普通釣竿"]; localStorage.setItem("ownedRods", JSON.stringify(ownedRods)); }
+
+/* 釣竿等級 (rodLevels) 用於升級機制 */
+let rodLevels = JSON.parse(localStorage.getItem("rodLevels") || "null");
+if(!rodLevels){ rodLevels = {}; /* default 0 */ localStorage.setItem("rodLevels", JSON.stringify(rodLevels)); }
+
+/* 粉末道具 */
+let powder = +localStorage.getItem("powder") || 0;
+
+/* 已釣到的魚數 */
+let fishCaught = +localStorage.getItem("fishCaught") || 0;
+
+const UNLOCK_KEY = "shownUnlocks_v1";
+let shownUnlocks = JSON.parse(localStorage.getItem(UNLOCK_KEY) || "{}");
+
+/* 等級表 */
+const levels = [
+  { lvl:0, need:0 },
+  { lvl:1, need:50 },
+  { lvl:2, need:200 },
+  { lvl:3, need:450 },
+  { lvl:4, need:750 },
+  { lvl:5, need:1200 }
+];
+
+/* 魚清單（較豐富） */
+const fishList = [
+ {name:"空氣",score:0,icon:"❄️",coinMin:0,coinMax:2, rank:"D", imgKey:"❄️"},
+ {name:"沙丁魚",score:1,icon:"🐟",coinMin:1,coinMax:8, rank:"D", imgKey:"🐟"},
+ {name:"海星",score:1,icon:"⭐",coinMin:1,coinMax:6, rank:"D", imgKey:"⭐"},
+ {name:"魷魚",score:3,icon:"🦑",coinMin:5,coinMax:25, rank:"C", imgKey:"🦑"},
+ {name:"螃蟹",score:2,icon:"🦀",coinMin:3,coinMax:14, rank:"C", imgKey:"🦀"},
+ {name:"小丑魚",score:4,icon:"🐠",coinMin:8,coinMax:22, rank:"B", imgKey:"🐠"},
+ {name:"河豚",score:5,icon:"🐡",coinMin:18,coinMax:45, rank:"B", imgKey:"🐡"},
+ {name:"蝦",score:2,icon:"🦐",coinMin:2,coinMax:12, rank:"C", imgKey:"🦐"},
+ {name:"水母",score:3,icon:"🪼",coinMin:4,coinMax:18, rank:"C", imgKey:"🪼"},
+ {name:"章魚",score:8,icon:"🐙",coinMin:25,coinMax:70, rank:"A", imgKey:"🐙"},
+ {name:"鯨魚",score:35,icon:"🐋",coinMin:100,coinMax:250, rank:"S", imgKey:"🐋"},
+ {name:"海龜",score:20,icon:"🐢",coinMin:60,coinMax:140, rank:"S", imgKey:"🐢"},
+ {name:"鯊魚",score:10,icon:"🦈",coinMin:30,coinMax:75, rank:"B", imgKey:"🦈"},
+ {name:"鰻魚",score:9,icon:"🐍",coinMin:30,coinMax:80, rank:"A", imgKey:"🐍"},
+ {name:"金槍魚",score:12,icon:"🐟‍🦱",coinMin:35,coinMax:95, rank:"A", imgKey:"🐟‍🦱"},
+ {name:"金龍魚",score:25,icon:"🐲",coinMin:45,coinMax:140, rank:"S", imgKey:"🐲"},
+ {name:"神秘龍魚",score:30,icon:"🐉",coinMin:50,coinMax:160, rank:"S", imgKey:"🐉"},
+ {name:"彩虹魚",score:22,icon:"🌈",coinMin:60,coinMax:150, rank:"S", imgKey:"🌈"},
+ {name:"深海巨獸",score:40,icon:"👾",coinMin:180,coinMax:400, rank:"S", imgKey:"👾"},
+ {name:"戰神魚",score:50,icon:"⚔️",coinMin:250,coinMax:600, rank:"S", imgKey:"⚔️"},
+];
+
+/* 釣竿 -> 基礎 rank 機率分配（5 等級：D,C,B,A,S）*/
+const baseRankProbsByRod = {
+  "普通釣竿": { D:0.60, C:0.25, B:0.10, A:0.04, S:0.01 },
+  "精良釣竿": { D:0.45, C:0.30, B:0.12, A:0.08, S:0.05 },
+  "稀有釣竿": { D:0.35, C:0.28, B:0.18, A:0.12, S:0.07 },
+  "史詩釣竿": { D:0.28, C:0.26, B:0.20, A:0.16, S:0.10 },
+  "傳說釣竿": { D:0.18, C:0.22, B:0.22, A:0.20, S:0.18 }
+};
+
+const rodPrices = {"精良釣竿":500,"稀有釣竿":1000,"史詩釣竿":2000,"傳說釣竿":3500};
+
+const rarityColors = {
+  "普通釣竿": { stroke: "#5d4037", handle: "#5d4037" },
+  "精良釣竿": { stroke: "#2e7d32", handle: "#2e7d32" },
+  "稀有釣竿": { stroke: "#1565c0", handle: "#1565c0" },
+  "史詩釣竿": { stroke: "#6a1b9a", handle: "#6a1b9a" },
+  "傳說釣竿": { stroke: "#d4af37", handle: "#d4af37" }
+};
+
+/* DOM 快取 */
+const scoreD = document.getElementById("score-display"),
+      coinD = document.getElementById("coin-display"),
+      scoreD2 = document.getElementById("score-display-bottom"),
+      coinD2 = document.getElementById("coin-display-bottom"),
+      rodInfo = document.getElementById("rod-info"),
+      result = document.getElementById("result"),
+      fishIcon = document.getElementById("fish-icon"),
+      fishLevel = document.getElementById("fish-level"),
+      afkResults = document.getElementById("afk-results"),
+      afkFishContainer = document.getElementById("afk-fish-container"),
+      afkCoinD = document.getElementById("afk-coin-display"),
+      shop = document.getElementById("shop"),
+      fishBtn = document.getElementById("fish-btn"),
+      afkBtn = document.getElementById("afk-btn"),
+      rodBtn = document.getElementById("rod-btn"),
+      rodPreviewSmall = document.getElementById("rod-preview-small"),
+      rodNameSmall = document.getElementById("rod-name-small"),
+      rodListDiv = document.getElementById("rod-list"),
+      openShopBottom = document.getElementById("open-shop-bottom"),
+      quickPatrolClaimBtn = document.getElementById("quick-patrol-claim-btn"),
+      afkClaimBtn = document.getElementById("afk-claim-btn"),
+      afkCloseBtn = document.getElementById("afk-close-btn"),
+      shopBtn = document.getElementById("shop-btn"),
+      shopLock = document.getElementById("shop-lock"),
+      powderCountSpan = document.getElementById("powder-count");
+
+const rodLineSVG = document.getElementById("rod-line-svg");
+const bobberSVG = document.getElementById("bobber-svg");
+const rodBody = document.getElementById("rod-body");
+const rodHandle = document.getElementById("rod-handle");
+const rodReel = document.getElementById("rod-reel");
+
+/* rank -> class mapping for name badge */
+const rankClass = { "D":"rank-D", "C":"rank-C", "B":"rank-B", "A":"rank-A", "S":"rank-S" };
+
+function calcLevel(){
+  return levels.slice().reverse().find(l=>experience >= l.need) || levels[0];
+}
+function nextLevel(cur){
+  const idx = levels.findIndex(l=>l.lvl===cur.lvl);
+  return levels[idx+1] || null;
+}
+
+function updateLevelUI(){
+  const cur = calcLevel(), nxt = nextLevel(cur);
+  const pct = nxt ? Math.floor((experience - cur.need) / (nxt.need - cur.need) * 100) : 100;
+  const levelBar = document.getElementById("level-bar");
+  levelBar.style.width = pct + "%";
+}
+
+/* 套用釣竿顏色 */
+function applyRodColor(name){
+  const stroke = (rarityColors[name] && rarityColors[name].stroke) ? rarityColors[name].stroke : "#5d4037";
+  const handle = (rarityColors[name] && rarityColors[name].handle) ? rarityColors[name].handle : "#5d4037";
+  if(rodLineSVG) { rodLineSVG.setAttribute("stroke", stroke); rodLineSVG.style.stroke = stroke; }
+  if(bobberSVG) { bobberSVG.setAttribute("fill", stroke); bobberSVG.setAttribute("stroke", "#222"); }
+  if(rodBody) { rodBody.setAttribute("stroke", stroke); rodBody.style.stroke = stroke; }
+  if(rodHandle) { rodHandle.setAttribute("fill", handle); rodHandle.style.fill = handle; }
+}
+
+/* 更新 UI 數值 */
+function updateUI(){
+  scoreD.textContent = score;
+  coinD.textContent = coins;
+  scoreD2.textContent = score;
+  coinD2.textContent = coins;
+  rodInfo.textContent = `當前釣竿：${equippedRod}`;
+  rodPreviewSmall.textContent = "🎣";
+  rodNameSmall.textContent = equippedRod;
+  applyRodColor(equippedRod);
+  updateLevelUI();
+  powderCountSpan.textContent = powder;
+
+  // 商店鎖定（示意）
+  if(fishCaught >= 1) { shopLock.style.display = "none"; shopBtn.disabled = false; } else { shopLock.style.display = "inline"; shopBtn.disabled = false; }
+
+  // 掛機解鎖（示意：釣 10 隻魚解鎖）
+  if(fishCaught < 10){ afkBtn.disabled = true; } else { afkBtn.disabled = false; }
+}
+
+/* 將基礎 rank 機率 (D,C,B,A,S) 根據釣竿等級 (rodLevels) 做微調
+   每等級會增加「每級 +1% (0.01)」傾向高階的權重（按照 rank index 加權），
+   同時乘上前述基礎權重再 normalize。*/
+function getRankWeightsForRod(rodName){
+  const base = baseRankProbsByRod[rodName] || baseRankProbsByRod["普通釣竿"];
+  const lvl = rodLevels[rodName] || 0;
+  const ranks = ["D","C","B","A","S"];
+  // 每級額外的提升量（以全部 ranks 的 sum 加到高階上，算法：每個 rank 加上 lvl*0.01 * (index/maxIndex)）
+  const extraPerLevel = lvl * 0.01;
+  let arr = ranks.map((r,i) => {
+    const posFactor = i / (ranks.length - 1); // 0..1
+    return (base[r] || 0) + extraPerLevel * posFactor;
+  });
+  // normalize
+  const s = arr.reduce((a,b)=>a+b,0);
+  return ranks.reduce((acc,r,i)=>{ acc[r] = arr[i]/s; return acc; }, {});
+}
+
+/* 隨機選魚：先得到 rank 機率，然後在該 rank 中平均分配給該 rank 的所有魚 */
+function getRandomFish(){
+  const rankWeights = getRankWeightsForRod(equippedRod);
+  // gather fish by rank
+  const ranks = {};
+  fishList.forEach(f => {
+    ranks[f.rank] = ranks[f.rank] || [];
+    ranks[f.rank].push(f);
+  });
+  // build per-fish weighted array
+  const fishWeights = [];
+  for(const rank in rankWeights){
+    const list = ranks[rank] || [];
+    if(list.length === 0) continue;
+    const perFish = rankWeights[rank] / list.length;
+    list.forEach(f => fishWeights.push({ fish: f, w: perFish }));
+  }
+  // normalize again just in case
+  const total = fishWeights.reduce((a,b)=>a+b.w,0);
+  let r = Math.random() * total;
+  for(const item of fishWeights){
+    r -= item.w;
+    if(r <= 0) return item.fish;
+  }
+  // fallback
+  return fishList[Math.floor(Math.random()*fishList.length)];
+}
+
+/* ------------ 釣魚動畫邏輯與顯示（包含名條染色） ------------- */
+/* setLineTo: 更新 SVG 線條 (二次貝茲) */
+function setLineTo(y){
+  const x1=520, y1=150, cx=540, cy=(150+y)/2 + 20, x2=560;
+  if(rodLineSVG) rodLineSVG.setAttribute("d", `M${x1},${y1} Q${cx},${cy} ${x2},${y}`);
+  if(bobberSVG) bobberSVG.setAttribute("cy", y);
+}
+
+/* animateBobber: 往下再彈回 */
+function animateBobberSequence(downY=320, upY=190, downDur=500, upDur=600, cb){
+  const start = parseFloat(bobberSVG.getAttribute("cy") || 190);
+  let startTime = null;
+  // down phase
+  function downStep(ts){
+    if(!startTime) startTime = ts;
+    const p = Math.min(1,(ts-startTime)/downDur);
+    const ease = p<0.5 ? 2*p*p : -1 + (4-2*p)*p;
+    const y = start + (downY - start) * ease;
+    setLineTo(y);
+    if(p<1) requestAnimationFrame(downStep);
+    else {
+      // up
+      startTime = null;
+      const s = downY;
+      const upStart = performance.now();
+      function upStep(t2){
+        const pp = Math.min(1,(t2-upStart)/upDur);
+        const ease2 = pp<0.5 ? 2*pp*pp : -1 + (4-2*pp)*pp;
+        const y2 = s + (upY - s) * ease2;
+        setLineTo(y2);
+        if(pp<1) requestAnimationFrame(upStep);
+        else if(typeof cb === "function") cb();
+      }
+      requestAnimationFrame(upStep);
+    }
+  }
+  requestAnimationFrame(downStep);
+}
+
+/* fish: 加上動畫、名條邊框顏色、pop 效果 */
+let isFishing = false;
+function fish(isSilent){
+  if(isFishing) return;
+  isFishing = true;
+
+  if(!isSilent){
+    result.textContent = "正在釣魚．．．";
+    fishIcon.textContent = "";
+    fishLevel.textContent = "";
+    // visual: bobber show and animate
+    bobberSVG.setAttribute("cy", 190);
+  }
+
+  // 開始投竿動畫（down then up），在回到上面後顯示魚
+  animateBobberSequence(330, 190, 550, 600, ()=>{
+    const f = getRandomFish();
+    score += f.score;
+    experience += 1;
+    if(f.name !== "空氣"){ fishCaught++; localStorage.setItem("fishCaught", fishCaught); }
+    const gain = f.coinMax>0 ? Math.floor(Math.random()*(f.coinMax - f.coinMin + 1)) + f.coinMin : 0;
+    coins += gain;
+
+    localStorage.setItem("score", score);
+    localStorage.setItem("coins", coins);
+    localStorage.setItem("experience", experience);
+
+    // name badge with rank border
+    const badge = document.createElement("span");
+    badge.className = "fish-name-badge " + (rankClass[f.rank] || "");
+    badge.textContent = f.name;
+    // replace fish-level content (只改邊)
+    fishLevel.innerHTML = "";
+    fishLevel.appendChild(badge);
+
+    // icon pop animation
+    fishIcon.textContent = f.icon;
+    fishIcon.classList.remove("fish-pop");
+    // force reflow to restart animation
+    void fishIcon.offsetWidth;
+    fishIcon.classList.add("fish-pop");
+
+    // slight scale effect on icon
+    fishIcon.style.transform = "scale(1.06)";
+    setTimeout(()=> fishIcon.style.transform = "scale(1)", 420);
+
+    result.textContent = `${f.name}（+${f.score}分） 獲得金幣：${gain}`;
+
+    // sound try
+    try{ document.getElementById("sound-fish").currentTime = 0; document.getElementById("sound-fish").play(); }catch(e){}
+
+    updateUI();
+    checkUnlocks();
+
+    // done
+    isFishing = false;
+  });
+}
+
+/* ------------ AFK 邏輯（保留原本） ------------- */
+function calcAfkRewards(){
+  const now = Date.now();
+  const diffHours = Math.floor((now - lastAFKTime) / (1000*60*60));
+  if(diffHours > 0){
+    afkCount = Math.min(7, afkCount + diffHours);
+    lastAFKTime += diffHours * 60*60*1000;
+    localStorage.setItem("afkCount", afkCount);
+    localStorage.setItem("lastAFKTime", lastAFKTime);
+  }
+}
+
+let afkPending = null;
+function toggleAFKResults(){
+  if(fishCaught < 10){ alert("掛機尚未解鎖：需釣 10 隻魚解鎖掛機功能。"); return; }
+  calcAfkRewards();
+  if(afkResults.style.display === "block"){ afkResults.style.display = "none"; return; }
+  afkFishContainer.innerHTML = "";
+  if(afkCount <= 0){ afkFishContainer.textContent = "目前沒有掛機魚，請先等待或使用快速巡邏。"; afkCoinD.textContent = "金幣：0"; afkClaimBtn.disabled = true; afkPending = null; afkResults.style.display = "block"; return; }
+
+  const map = {}, totalCoins = {v:0};
+  for(let i=0;i<afkCount;i++){
+    const f = getRandomFish();
+    if(!map[f.name]) map[f.name] = {count:0, fish:f, coins:0};
+    map[f.name].count++;
+    const c = f.coinMax>0 ? Math.floor(Math.random()*(f.coinMax - f.coinMin + 1)) + f.coinMin : 0;
+    map[f.name].coins += c;
+    totalCoins.v += c;
+  }
+  for(const k in map){
+    const o = map[k];
+    const wr = document.createElement("div");
+    wr.style.display = "flex"; wr.style.alignItems = "center"; wr.style.gap = "10px"; wr.style.marginBottom = "6px";
+    const fishDiv = document.createElement("div");
+    fishDiv.className = "afk-fish"; fishDiv.textContent = o.fish.icon;
+    const cnt = document.createElement("div"); cnt.className = "afk-count"; cnt.textContent = `×${o.count}`;
+    fishDiv.appendChild(cnt);
+    const coinDiv = document.createElement("div"); coinDiv.style.fontWeight = "900"; coinDiv.textContent = `🪙 ${o.coins}`;
+    wr.appendChild(fishDiv); wr.appendChild(coinDiv);
+    afkFishContainer.appendChild(wr);
+  }
+  afkCoinD.textContent = `金幣：${totalCoins.v}`;
+  afkClaimBtn.disabled = false;
+  afkPending = { map: map, coins: totalCoins.v };
+  afkResults.style.display = "block";
+}
+
+function claimAFKRewards(){
+  if(!afkPending || afkCount <= 0){ alert("沒有掛機獎勵可領取！"); return; }
+  for(const k in afkPending.map){
+    const o = afkPending.map[k];
+    score += o.fish.score * o.count;
+  }
+  coins += afkPending.coins;
+  afkCount = 0;
+  afkPending = null;
+  localStorage.setItem("score", score);
+  localStorage.setItem("coins", coins);
+  localStorage.setItem("afkCount", afkCount);
+  alert("掛機獎勵領取成功！");
+  updateUI();
+  afkResults.style.display = "none";
+}
+
+/* 快速巡邏 */
+function quickPatrolClaim(){
+  const today = new Date(Date.now() + 8*3600*1000).toISOString().slice(0,10);
+  const lvl = calcLevel().lvl;
+  const maxClaim = lvl >= 4 ? 2 : 1;
+  if(lastQuickPatrolClaimDate !== today) quickPatrolClaimsToday = 0;
+  if(quickPatrolClaimsToday >= maxClaim){ alert(`今日快速巡邏已達上限（${maxClaim}次）`); return; }
+  const scoreGain = 60;
+  const coinsGain = 200;
+  score += scoreGain; coins += coinsGain;
+  quickPatrolClaimsToday++;
+  lastQuickPatrolClaimDate = today;
+  localStorage.setItem("lastQuickPatrolClaimDate", today);
+  localStorage.setItem("quickPatrolClaimsToday", quickPatrolClaimsToday);
+  localStorage.setItem("score", score);
+  localStorage.setItem("coins", coins);
+  alert(`快速巡邏獎勵：+${scoreGain} 分，+${coinsGain} 金幣`);
+  updateUI();
+}
+
+/* 商店與釣竿清單 & modal（含可滑動預覽） */
+/* 更新：粉末購買 - 300 金幣 可購 100 粉末（一次） */
+function renderShop(){
+  shop.innerHTML = '';
+  const title = document.createElement("div"); title.style.fontWeight = "900"; title.style.marginBottom = "8px"; title.textContent = "商店（每週可購一次）";
+  shop.appendChild(title);
+  const list = ["精良釣竿","稀有釣竿","史詩釣竿","傳說釣竿","粉末包"];
+  list.forEach(name=>{
+    const it = document.createElement("div"); it.className = "shop-item";
+    const left = document.createElement("div");
+    if(name === "粉末包"){
+      left.innerHTML = `粉末包（300 🪙 → +100 粉末） <span style="font-size:14px;color:#666;display:block">✨ 粉末圖示：✨</span>`;
+    } else {
+      left.textContent = `${name}（${rodPrices[name]} 🪙）`;
+    }
+    const btn = document.createElement("button");
+    if(name === "粉末包"){
+      btn.className = "shop-btn buy"; btn.textContent = "購買";
+      btn.addEventListener("click", ()=> buyPowderPack());
+    } else if(ownedRods.includes(name)){ btn.className = "shop-btn owned"; btn.textContent = "已擁有"; btn.disabled = true; }
+    else {
+      btn.className = "shop-btn buy"; btn.textContent = "購買";
+      btn.addEventListener("click", ()=> buyRod(name));
+    }
+    it.appendChild(left); it.appendChild(btn); shop.appendChild(it);
+  });
+}
+
+function toggleShop(){
+  if(fishCaught < 1){ if(!confirm("商店尚未完全解鎖（需釣到一隻魚）。仍要打開嗎？")) return; }
+  renderShop();
+  shop.style.display = shop.style.display === "block" ? "none" : "block";
+}
+
+/* 購買粉末包（300 coins -> +100 powder） */
+function buyPowderPack(){
+  const cost = 300;
+  const amount = 100;
+  if(coins < cost){ alert("金幣不足！"); return; }
+  coins -= cost;
+  powder += amount;
+  localStorage.setItem("coins", coins);
+  localStorage.setItem("powder", powder);
+  alert(`購買成功：+${amount} 粉末`);
+  updateUI();
+  renderShop();
+}
+
+/* 購買釣竿（每把每週一次）- 簡化示例（儲存購買記錄） */
+function buyRod(name){
+  const now = new Date();
+  const key = "buyDate_" + name;
+  const todayKey = now.toISOString().slice(0,10);
+  const bought = localStorage.getItem(key) || "";
+  if(bought === todayKey){ alert("今天已購買過這把釣竿！（每週重製或限制可擴）"); return; }
+  if(coins < rodPrices[name]){ alert("金幣不足！"); return; }
+  coins -= rodPrices[name];
+  ownedRods.push(name);
+  equippedRod = name;
+  localStorage.setItem("coins", coins);
+  localStorage.setItem("ownedRods", JSON.stringify(ownedRods));
+  localStorage.setItem("rod", equippedRod);
+  localStorage.setItem(key, todayKey);
+  alert(`購買成功：${name}（已自動裝備）`);
+  updateUI();
+  renderShop();
+}
+
+/* 釣竿 modal 列表（含 preview，顯示未擁有也可預覽） */
+/* 升級價格改為：目標等級 N => 需要 N*100 粉末 + N*200 金幣 (例如升到 Lv1 需 100p + 200c；升到 Lv2 需 200p + 400c) */
+function renderRodListModal(){
+  rodListDiv.innerHTML = "";
+  const modalPreview = document.getElementById("rod-modal-preview");
+  modalPreview.style.display = "flex";
+  // show all known rods
+  const all = ["普通釣竿","精良釣竿","稀有釣竿","史詩釣竿","傳說釣竿"];
+  all.forEach(name=>{
+    const row = document.createElement("div"); row.className = "rod-row";
+    const left = document.createElement("div"); left.style.display="flex"; left.style.alignItems="center"; left.style.gap="8px";
+    const preview = document.createElement("div"); preview.style.width="84px"; preview.style.height="36px"; preview.style.background="#fff"; preview.style.display="flex"; preview.style.alignItems="center"; preview.style.justifyContent="center"; preview.style.borderRadius="8px"; preview.textContent="🎣";
+    const lvl = rodLevels[name] || 0;
+    const txt = document.createElement("div");
+    txt.innerHTML = `<div style="font-weight:900">${name} ${ownedRods.includes(name) ? '' : '(未擁有)'}</div><div style="font-size:12px;color:#666">等級 ${lvl} · 價格 ${rodPrices[name]||"-"}</div>`;
+    left.appendChild(preview); left.appendChild(txt);
+    const right = document.createElement("div"); right.style.display="flex"; right.style.gap="8px"; right.style.alignItems="center";
+    // equip or buy
+    if(ownedRods.includes(name)){
+      const btn = document.createElement("button");
+      if(equippedRod === name){ btn.textContent = "已裝備"; btn.className = "modal-equip-btn disabled"; btn.disabled = true; }
+      else {
+        btn.textContent = "裝備"; btn.className = "modal-equip-btn equip";
+        btn.addEventListener("click", ()=> { equipRod(name); renderRodListModal(); renderPreview(name); });
+      }
+      right.appendChild(btn);
+    } else {
+      const buyBtn = document.createElement("button");
+      buyBtn.className = "modal-equip-btn equip";
+      buyBtn.textContent = "購買";
+      buyBtn.addEventListener("click", ()=> buyRod(name));
+      right.appendChild(buyBtn);
+    }
+
+    // 升級按鈕（只對已擁有的有效）
+    const upgradeBtn = document.createElement("button");
+    upgradeBtn.style.padding = "8px 10px"; upgradeBtn.style.borderRadius = "8px"; upgradeBtn.style.fontWeight = "800";
+    const curLvl = rodLevels[name] || 0;
+    const nextLvl = curLvl + 1;
+    const powderCost = nextLvl * 100;
+    const coinCost = nextLvl * 200;
+    upgradeBtn.textContent = `升級 → Lv.${nextLvl}（${powderCost} 粉 + ${coinCost} 🪙）`;
+    if(!ownedRods.includes(name)) { upgradeBtn.disabled = true; upgradeBtn.style.background = "#ddd"; }
+    else {
+      upgradeBtn.style.background = "#FF9800";
+      upgradeBtn.addEventListener("click", ()=> upgradeRod(name));
+    }
+
+    // clicking preview shows in big preview
+    preview.addEventListener("click", ()=> renderPreview(name));
+
+    right.appendChild(upgradeBtn);
+    row.appendChild(left); row.appendChild(right);
+    rodListDiv.appendChild(row);
+  });
+}
+
+/* renderPreview: 把選中釣竿渲染到 #rod-preview-svg 與文字 */
+function renderPreview(name){
+  const svgel = document.getElementById("rod-preview-svg");
+  const modalPreview = document.getElementById("rod-modal-preview");
+  modalPreview.style.display = "flex";
+  // clear
+  while(svgel.firstChild) svgel.removeChild(svgel.firstChild);
+  // simple rod drawing: handle, reel, body, line, bobber
+  const ns = "http://www.w3.org/2000/svg";
+  const handle = document.createElementNS(ns,"rect");
+  handle.setAttribute("x", "20"); handle.setAttribute("y", "80"); handle.setAttribute("width", "80"); handle.setAttribute("height", "14"); handle.setAttribute("rx","8");
+  handle.setAttribute("fill", rarityColors[name] ? rarityColors[name].handle : "#5d4037");
+  const reel = document.createElementNS(ns,"circle");
+  reel.setAttribute("cx","110"); reel.setAttribute("cy","87"); reel.setAttribute("r","12"); reel.setAttribute("fill","#9e9e9e"); reel.setAttribute("stroke","#616161");
+  const body = document.createElementNS(ns,"path");
+  body.setAttribute("d","M140,88 C240,70 360,54 520,30");
+  body.setAttribute("stroke", rarityColors[name] ? rarityColors[name].stroke : "#2e7d32");
+  body.setAttribute("stroke-width","6"); body.setAttribute("fill","none"); body.setAttribute("stroke-linecap","round");
+  const line = document.createElementNS(ns,"path");
+  line.setAttribute("d","M520,30 Q540,90 560,140"); line.setAttribute("stroke", rarityColors[name] ? rarityColors[name].stroke : "#2e7d32"); line.setAttribute("stroke-width","2"); line.setAttribute("fill","none");
+  const bob = document.createElementNS(ns,"circle"); bob.setAttribute("cx","560"); bob.setAttribute("cy","140"); bob.setAttribute("r","8"); bob.setAttribute("fill", rarityColors[name] ? rarityColors[name].stroke : "#2e7d32");
+  svgel.appendChild(handle); svgel.appendChild(reel); svgel.appendChild(body); svgel.appendChild(line); svgel.appendChild(bob);
+
+  // set text + level
+  const lvl = rodLevels[name] || 0;
+  document.getElementById("rod-preview-name").textContent = name + `（等級 ${lvl}）`;
+  document.getElementById("rod-preview-desc").textContent = `預覽：${name}（價格 ${rodPrices[name]||"—"}） - 持有：${ownedRods.includes(name) ? '是' : '否'}`;
+}
+
+/* 升級釣竿 - 更新成同時檢查粉末與金幣 */
+function upgradeRod(name){
+  if(!ownedRods.includes(name)){ alert("尚未取得此釣竿，無法升級。"); return; }
+  const cur = rodLevels[name] || 0;
+  const nextLvl = cur + 1;
+  const powderCost = nextLvl * 100;
+  const coinCost = nextLvl * 200;
+  if(powder < powderCost){ alert(`粉末不足（需 ${powderCost} 粉）`); return; }
+  if(coins < coinCost){ alert(`金幣不足（需 ${coinCost} 金幣）`); return; }
+  powder -= powderCost;
+  coins -= coinCost;
+  rodLevels[name] = nextLvl;
+  localStorage.setItem("powder", powder);
+  localStorage.setItem("coins", coins);
+  localStorage.setItem("rodLevels", JSON.stringify(rodLevels));
+  alert(`${name} 已升級到 Lv.${rodLevels[name]}（消耗 ${powderCost} 粉 + ${coinCost} 金幣）`);
+  updateUI();
+  renderRodListModal();
+  renderPreview(name);
+}
+
+/* 裝備釣竿 */
+function equipRod(name){
+  if(!ownedRods.includes(name)){
+    toggleShop();
+    return;
+  }
+  equippedRod = name;
+  localStorage.setItem("rod", equippedRod);
+  updateUI();
+  alert(`已裝備：${name}`);
+}
+
+/* 檢查解鎖（提示一次） */
+function showUnlockNotice(msg){
+  const n = document.getElementById("unlock-notice");
+  n.textContent = msg; n.style.display = "block";
+  setTimeout(()=>{ n.style.display = "none"; }, 1700);
+}
+function showLevelUpNotice(lvl){
+  const n = document.getElementById("level-up-notice");
+  n.textContent = `升級！ 等級 ${lvl}`;
+  n.style.display = "block";
+  setTimeout(()=>{ n.style.display = "none"; }, 1600);
+}
+function checkUnlocks(){
+  if(fishCaught >= 1 && !shownUnlocks.shop){ shownUnlocks.shop = true; localStorage.setItem(UNLOCK_KEY, JSON.stringify(shownUnlocks)); showUnlockNotice("商店已解鎖！"); }
+  if(fishCaught >= 10 && !shownUnlocks.afk){ shownUnlocks.afk = true; localStorage.setItem(UNLOCK_KEY, JSON.stringify(shownUnlocks)); showUnlockNotice("掛機已解鎖！"); }
+}
+
+/* 綁定事件 */
+document.getElementById("fish-btn").addEventListener("click", ()=> fish(false));
+document.getElementById("rod-btn").addEventListener("click", ()=>{
+  renderRodListModal();
+  renderPreview(equippedRod);
+  const modal = document.getElementById("rod-modal");
+  modal.classList.add("show");
+});
+document.getElementById("rod-modal-close").addEventListener("click", ()=> { document.getElementById("rod-modal").classList.remove("show"); });
+document.getElementById("afk-btn").addEventListener("click", ()=> toggleAFKResults());
+document.getElementById("afk-claim-btn").addEventListener("click", ()=> claimAFKRewards());
+document.getElementById("quick-patrol-claim-btn").addEventListener("click", ()=> quickPatrolClaim());
+document.getElementById("afk-close-btn").addEventListener("click", ()=> { afkResults.style.display = "none"; });
+document.getElementById("shop-btn").addEventListener("click", ()=> toggleShop());
+openShopBottom.addEventListener("click", ()=> toggleShop());
+document.getElementById("rod-preview-small").addEventListener("click", ()=> { renderRodListModal(); renderPreview(equippedRod); document.getElementById("rod-modal").classList.add("show"); });
+
+/* 初始化 */
+function init(){
+  // load rodLevels & powder to ensure UI sync
+  rodLevels = JSON.parse(localStorage.getItem("rodLevels") || "null") || rodLevels;
+  powder = +localStorage.getItem("powder") || powder;
+  // 每分鐘檢查掛機累積
+  setInterval(()=>{ calcAfkRewards(); updateUI(); }, 60*1000);
+  updateUI();
+  applyRodColor(equippedRod);
+  checkUnlocks();
+}
+init();
+
+</script>
+</body>
+</html>
